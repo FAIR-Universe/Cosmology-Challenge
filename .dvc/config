@@ -1,0 +1,6 @@
+[cache]
+    dir = /pscratch/sd/b/bthorne/fairuniverse/cosmo_challenge_cache
+[core]
+    remote = nersc
+['remote "nersc"']
+    url = /global/cfs/cdirs/m4287/cosmology/hsc
