@@ -1,10 +1,7 @@
-from raytracing import LensingPlane, RayTracer
+from raytracing import LensingPlane
 from nbodykit.cosmology import Cosmology
 import numpy as np
-from pmesh.pm import ParticleMesh
-import time
 import gc
-from nbodykit.lab import FieldMesh
 import argparse
 from pathlib import Path
 
