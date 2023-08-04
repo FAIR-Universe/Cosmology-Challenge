@@ -15,19 +15,20 @@ def main():
     parser.add_argument(
         "--base_dir",
         type=Path,
-        default="/pscratch/sd/b/bthorne/fairuniverse/hsc_dataset/potentials",
+        default="/pscratch/sd/b/bthorne/fairuniverse/hsc_dataset",
     )
     parser.add_argument("--snapshot_start", type=int, default=0)
     parser.add_argument("--snapshot_end", type=int, default=43)
     parser.add_argument("--data_dir", type=Path, default="data")
     parser.add_argument("--cosmology_file", type=Path, default="data/cosmology.txt")
+    parser.add_argument("--redshifts_file", type=Path, default="data/redshifts.txt")
     args = parser.parse_args()
     params = vars(args)
 
     # hyperparameters
     Omega_m = np.loadtxt(params["cosmology_file"])[params["simulation"], 0]
     sigma_8 = np.loadtxt(params["cosmology_file"])[params["simulation"], 1]
-    simulation = str(params["simulation"])
+    simulation = params["simulation"]
     # Omega_m = 0.279
     # sigma_8 = 0.82
     # simulation = 'mock'
@@ -50,63 +51,7 @@ def main():
     )
     # cosmology = cosmology.match(sigma8=sigma_8)
 
-    redshift = np.array(
-        [
-            0.01674168,
-            0.0506174,
-            0.08504611,
-            0.12006466,
-            0.15571175,
-            0.19202803,
-            0.22905622,
-            0.26684124,
-            0.30543036,
-            0.34487332,
-            0.38522251,
-            0.42653314,
-            0.46886342,
-            0.51227478,
-            0.55683209,
-            0.60260389,
-            0.64966266,
-            0.69808513,
-            0.74795256,
-            0.79935109,
-            0.85237212,
-            0.90711273,
-            0.96367608,
-            1.02217196,
-            1.08271726,
-            1.1454366,
-            1.21046296,
-            1.27793838,
-            1.34801472,
-            1.42085458,
-            1.49663214,
-            1.57553433,
-            1.65776187,
-            1.74353062,
-            1.83307297,
-            1.92663943,
-            2.02450038,
-            2.12694802,
-            2.23429857,
-            2.34689472,
-            2.46510834,
-            2.58934359,
-            2.72004039,
-            2.85767826,
-            3.00278084,
-            3.15592076,
-            3.31772541,
-            3.48888333,
-            3.67015156,
-            3.86236406,
-            4.06644131,
-            4.2834014,
-            4.51437274,
-        ]
-    )
+    redshift = np.loadtxt(params["redshifts_file"])
 
     comoving_dis = np.array([cosmology.comoving_distance(z) for z in redshift])
 
@@ -114,20 +59,20 @@ def main():
     snapshot_dir = []
     for i in range(12):
         snapshot_dir.append(
-            snapshot_basedir / "MP-Gadget" / simulation / f"PART_{15 - i:03d}"
+            snapshot_basedir / "MP-Gadget" / f"{simulation}" / f"PART_{15 - i:03d}"
         )
     for i in range(12, 24):
         snapshot_dir.append(
             snapshot_basedir
             / "fastpm_box704"
-            / "{simulation}_new_n4"
+            / f"{simulation}_new_n4"
             / f"Om_{Omega_m:.4f}_S8_{sigma_8:.4f}_{1/(1+redshift[i]):.4f}"
         )
     for i in range(24, 43):
         snapshot_dir.append(
             snapshot_basedir
             / "fastpm_box1536"
-            / simulation
+            / f"{simulation}"
             / f"Om_{Omega_m:.4f}_S8_{sigma_8:.4f}_{1/(1+redshift[i]):.4f}"
         )
 
@@ -158,11 +103,11 @@ def main():
         # FOV and thickness
         if snapshot_id < 3:
             width = comoving_dis[snapshot_id] * angle * 3
-            periodic = False
+            # periodic = False
             Nrealization = 36
         else:
             width = boxsize
-            periodic = True
+            # periodic = True
             Nrealization = 18
 
         Nmesh = 2 ** round(np.log2(width / comoving_dis[snapshot_id] / resolution))
@@ -189,7 +134,7 @@ def main():
             )
 
             pos = plane.calculate_potential(
-                part_dir=snapshot_dir[snapshot_id],
+                part_dir=str(snapshot_dir[snapshot_id]),
                 Nmesh=Nmesh,
                 boxsize=[width, width, thick],
                 los=dim[realization],
@@ -201,10 +146,11 @@ def main():
             )
 
             plane.save(
-                save_dir
-                + "LensingPlane/"
-                + simulation
-                + "_plane%d_realization%d_coherent" % (snapshot_id, realization),
+                str(
+                    save_dir
+                    / "LensingPlane"
+                    / f"{simulation:03d}_plane{snapshot_id:03d}_realization{realization:03d}_coherent"
+                ),
                 files=["potentialk"],
             )
 
