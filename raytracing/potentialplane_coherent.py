@@ -104,11 +104,13 @@ def main():
         if snapshot_id < 3:
             width = comoving_dis[snapshot_id] * angle * 3
             # periodic = False
-            Nrealization = 36
+            # Nrealization = 36
+            Nrealization = 1
         else:
             width = boxsize
             # periodic = True
-            Nrealization = 18
+            # Nrealization = 18
+            Nrealization = 1
 
         Nmesh = 2 ** round(np.log2(width / comoving_dis[snapshot_id] / resolution))
         if snapshot_id > 32:
