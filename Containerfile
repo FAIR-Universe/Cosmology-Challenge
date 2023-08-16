@@ -9,10 +9,10 @@ RUN pip install scikit-learn
 RUN pip install mpsort nbodykit pmesh
 RUN pip install fastpm
 
-COPY setup.py .
-COPY src/ src/
-RUN pip install -e .
+WORKDIR /usr/src/app
+COPY . .
+RUN pip install .
 
+WORKDIR /opt
 COPY scripts/ scripts/
-COPY raytracing/ raytracing/
 COPY data/ data/
