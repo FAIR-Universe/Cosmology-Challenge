@@ -1,0 +1,13 @@
+Warning: This is an experimental release of NCCL with an OFI plugin for use with libfabric on Perlmutter.
+In case of issues, please refer to our known issues: https://docs.nersc.gov/current/
+and open a help ticket if your issue is not listed: https://help.nersc.gov/
+Epoch 1/10 - Train loss: 0.2529, Valid loss: 0.0034
+Epoch 2/10 - Train loss: 0.0038, Valid loss: 0.0049
+Epoch 3/10 - Train loss: 0.0039, Valid loss: 0.0066
+Epoch 4/10 - Train loss: 0.0037, Valid loss: 0.0044
+Epoch 5/10 - Train loss: 0.0035, Valid loss: 0.0029
+Epoch 6/10 - Train loss: 0.0034, Valid loss: 0.0038
+Epoch 7/10 - Train loss: 0.0036, Valid loss: 0.0049
+Epoch 8/10 - Train loss: 0.0035, Valid loss: 0.0033
+Epoch 9/10 - Train loss: 0.0034, Valid loss: 0.0025
+Epoch 10/10 - Train loss: 0.0038, Valid loss: 0.0029

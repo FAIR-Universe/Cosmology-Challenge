@@ -20,6 +20,7 @@ def main():
     parser.add_argument("--realization", type=int, default=None)
     parser.add_argument("--realization_start", type=int, default=0)
     parser.add_argument("--realization_end", type=int, default=100)
+    parser.add_argument("--cosmology_file", type=Path, default="data/cosmology.txt")
     parser.add_argument("--redshifts_file", type=Path, default="data/redshifts.txt")
     args = parser.parse_args()
     params = vars(args)
@@ -29,8 +30,8 @@ def main():
         params["realization_end"] = 5 * (params["realization"] + 1)
 
     # hyperparameters
-    Omega_m = np.loadtxt("../nbody/cosmology.txt")[params["simulation"], 0]
-    sigma_8 = np.loadtxt("../nbody/cosmology.txt")[params["simulation"], 1]
+    Omega_m = np.loadtxt(params["cosmology_file"])[params["simulation"], 0]
+    sigma_8 = np.loadtxt(params["cosmology_file"])[params["simulation"], 1]
     simulation = str(params["simulation"])
     # Omega_m = 0.279
     # sigma_8 = 0.82
@@ -102,7 +103,7 @@ def main():
         )
         plane_transpose = comm.bcast(
             np.random.randn(8) > 0 if comm.rank == 0 else None, root=0
-        )
+        )j
 
         t = time.time()
 

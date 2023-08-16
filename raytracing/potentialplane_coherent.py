@@ -78,7 +78,9 @@ def main():
 
     assert params["snapshot_start"] in starting_index
     for snapshot_id in range(params["snapshot_start"], params["snapshot_end"]):
-        index = np.sum(snapshot_id >= starting_index) - 1
+        index = (
+            np.sum(snapshot_id >= starting_index) - 1
+        )  # TODO : What does this line do? Very confusing.
         if snapshot_id == starting_index[index]:
             gap = 0
 

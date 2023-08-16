@@ -62,3 +62,35 @@ There are 101 cosmologies in total. Each particle has an associated position and
 - For the 704 boxes what are the `new_n4` runs?
 - 
   
+
+Hi Biwei, I was wondering if your EGD code is designed for a specific version of `fastpm` or `pmesh`? Coming back to it, I can not run either the EGD or PGD functions, as the `apply` method of the `pmesh.pm.BaseField` does not work (ends up with the attribute error below). 
+
+```
+---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+/tmp/ipykernel_610463/2770364504.py in 
+----> 1 egd.EGD(ac, 1.1, 0.1)
+
+/global/u1/b/bthorne/projects/berkeley/FAIR-Universe/Cosmology-Challenge/src/egd.py in EGD(cat, gamma, beta, r_smth, BaryonFraction, fpm)
+    106     rho[...] /= nbar # 1 + delta
+    107 
+--> 108     rho = rho.r2c(out=Ellipsis).apply(Gaussian(r_smth), out=Ellipsis).c2r(out=Ellipsis)
+    109 
+    110     select = np.array(rho) < 0
+
+/pscratch/sd/b/bthorne/conda/nbodykit_env/lib/python3.7/site-packages/pmesh/pm.py in apply(self, func, kind, out)
+   1014         assert isinstance(out, _gettype(self))
+   1015 
+-> 1016         for k, i, islab, oslab in zip(self.slabs.x, self.slabs.i, self.slabs, out.slabs):
+   1017             if kind == 'wavenumber':
+   1018                 oslab[...] = func(k, islab)
+
+/pscratch/sd/b/bthorne/conda/nbodykit_env/lib/python3.7/site-packages/pmesh/pm.py in __iter__(self)
+    111             kk = [x[0] if d != self.axis else x[irow] for d, x in enumerate(self.optx)]
+    112             ii = [x[0] if d != self.axis else x[irow] for d, x in enumerate(self.opti)]
+--> 113             s.x = kk
+    114             s.i = ii
+    115             s.BoxSize = self.BoxSize
+
+AttributeError: 'numpy.complex128' object has no attribute 'x'
+```

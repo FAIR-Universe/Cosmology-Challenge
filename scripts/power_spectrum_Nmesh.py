@@ -12,10 +12,14 @@ bfc = BigFileCatalog(
 Nmeshs = [512, 1024, 2048]
 kmax = 50
 kmin = 0.01
+frac = 0.01
+subsample_bfc = bfc[: int(len(bfc) * frac)]
 
 fig, ax = plt.subplots(figsize=(8, 6))
 for Nmesh in Nmeshs:
-    result = FFTPower(bfc, mode="1d", Nmesh=Nmesh, dk=0.005, kmin=kmin, kmax=kmax)
+    result = FFTPower(
+        subsample_bfc, mode="1d", Nmesh=Nmesh, dk=0.005, kmin=kmin, kmax=kmax
+    )
     result.save("Pk_Nmesh_{Nmesh}.json".format(Nmesh=Nmesh))
     Pk = result.power
     ax.loglog(
@@ -28,4 +32,4 @@ ax.legend(loc=3, frameon=False)
 ax.set_xlabel(r"$k$ [$h \ \mathrm{Mpc}^{-1}$]")
 ax.set_ylabel(r"$P(k)$ [$h^{-3}\mathrm{Mpc}^3$]")
 ax.set_xlim(kmin, kmax)
-fig.savefig("Pk_Nmeshs.png", bbox_inches="tight")
+fig.savefig("subsamp_Pk_Nmeshs.png", bbox_inches="tight")
