@@ -1,0 +1,16 @@
+/usr/local/lib/python3.8/dist-packages/bigfile/__init__.py:358: FutureWarning: Passing (type, 1) or '1type' as a synonym of type is deprecated; in a future version of numpy, it will be understood as (type, (1,)) / '(1,)type'.
+  return pyxbigfile.Dataset.__init__(self, file, dtype=dtype, size=size)
+Traceback (most recent call last):
+  File "scripts/tests/test_egd.py", line 11, in <module>
+    EGD(fastpm_tng_seed, gamma, beta)
+  File "/usr/local/lib/python3.8/dist-packages/wlchallenge/egd.py", line 120, in EGD
+    rho = rho.r2c(out=Ellipsis).apply(Gaussian(r_smth), out=Ellipsis).c2r(out=Ellipsis)
+  File "/usr/local/lib/python3.8/dist-packages/pmesh/pm.py", line 1070, in apply
+    return Field.apply(self, func, kind, out)
+  File "/usr/local/lib/python3.8/dist-packages/pmesh/pm.py", line 633, in apply
+    for x, i, islab, oslab in zip(self.slabs.x, self.slabs.i, self.slabs, outslabs):
+  File "/usr/local/lib/python3.8/dist-packages/pmesh/pm.py", line 116, in __iter__
+    s.x = kk
+AttributeError: 'numpy.complex128' object has no attribute 'x'
+srun: error: nid006602: task 0: Exited with exit code 1
+srun: Terminating StepId=13973847.0
