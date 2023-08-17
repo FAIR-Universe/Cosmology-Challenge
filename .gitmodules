@@ -1,0 +1,3 @@
+[submodule "data/baryons/baryon-power-spectra"]
+	path = data/baryons/baryon-power-spectra
+	url = https://github.com/hungjinh/baryon-power-spectra.git
