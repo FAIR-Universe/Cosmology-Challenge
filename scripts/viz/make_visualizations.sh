@@ -9,4 +9,5 @@
 srun podman-hpc run --rm \
     --volume $PWD/data:/data \
     --volume $PWD/plots:/plots \
-    fpm:latest python3 scripts/viz/TNG100_Pkratio_z_evolution.py
+    --volume $PWD/scripts:/scripts \
+    fpm:latest python3 /scripts/viz/TNG100_Pkratio_z_evolution.py
