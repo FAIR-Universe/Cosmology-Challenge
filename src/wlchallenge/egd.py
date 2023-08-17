@@ -36,8 +36,9 @@ def PGD(cat, alpha, kl, ks, fpm=None, Omega_m0=0.2726):
         )
         mask = B < 1
         B[mask] = 1
+        n = int(B * cat.attrs["Nmesh"])
         fpm = ParticleMesh(
-            Nmesh=B * cat.attrs["Nmesh"],
+            Nmesh=[n, n, n],
             BoxSize=cat.attrs["BoxSize"],
             comm=cat.comm,
             resampler="tsc",
@@ -97,9 +98,8 @@ def EGD(cat, gamma, beta, r_smth=0.1, BaryonFraction=None, fpm=None):
         B = np.ceil(cat.attrs["BoxSize"] / (r_smth * cat.csize ** (1.0 / 3.0)))
         mask = B < 1
         B[mask] = 1
-        fpm = ParticleMesh(
-            Nmesh=B * cat.attrs["Nmesh"], BoxSize=cat.attrs["BoxSize"], comm=cat.comm
-        )
+        n = int(B * cat.attrs["Nmesh"])
+        fpm = ParticleMesh(Nmesh=[n, n, n], BoxSize=cat.attrs["BoxSize"], comm=cat.comm)
 
     if BaryonFraction is None:
         BaryonFraction = Planck15.Ob0 / Planck15.Om0
