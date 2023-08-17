@@ -10,9 +10,8 @@ RUN pip install mpsort nbodykit pmesh
 RUN pip install fastpm
 
 WORKDIR /usr/src/app
-COPY . .
+COPY src/ src/ 
+COPY setup.py setup.py
 RUN pip install .
 
 WORKDIR /opt
-COPY scripts/ scripts/
-COPY data/ data/
