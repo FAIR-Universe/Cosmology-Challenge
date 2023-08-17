@@ -16,6 +16,10 @@ def parse_arguments():
     return vars(parser.parse_args())
 
 
+def get_covariance():
+    return
+
+
 def fit_egd():
     return
 
