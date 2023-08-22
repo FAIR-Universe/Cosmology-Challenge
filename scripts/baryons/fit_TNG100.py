@@ -9,7 +9,7 @@ import os
 from nbodykit.source.catalog.file import BigFileCatalog
 from nbodykit.lab import FFTPower
 from wlchallenge.egd import EGD
-
+import emcee
 
 COMM = MPI.COMM_WORLD
 RANK = COMM.Get_rank()
@@ -200,6 +200,8 @@ class FastPM_EGD_Likelihood(object):
         return
 
     def __call__(self, params):
+        if params[0] < 1:
+            return -np.inf
         pos = EGD(self.cat, params[0], params[1])
         Pk = FFTPower(pos, Nmesh=self.Nmesh, kmax=self.kmax).power
         delta_Pk = Pk["power"].real - Pk.attrs["shotnoise"] - self.Pk_target
@@ -245,7 +247,7 @@ def main():
     lkl = FastPM_EGD_Likelihood(target_Pk, cov_Pk, cat, Nmesh=Nmesh_Pk, kmax=10.0)
 
     # Perform sampling.
-
+    emce
     return
 
 
