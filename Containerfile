@@ -22,6 +22,7 @@ RUN pip install numpy           \
 WORKDIR /usr/src/app
 COPY src/ src/
 COPY setup.py setup.py
+RUN pip install .
 
 WORKDIR /usr/src/pmesh
 COPY pmesh/ pmesh/
