@@ -10,10 +10,10 @@ export OMP_NUM_THREADS=1
 total_processes=$((SLURM_JOB_NUM_NODES * 128))
 
 
-srun -n 4 podman-hpc run --mpi --rm \
-    --volume /pscratch/sd/b/bthorne/fairuniverse/hsc_dataset:/snapshot_dir \
-    --volume $PWD/scripts:/scripts \
-    --volume $PWD/data:/data \
-    --volume $PWD/plots:/plots \
+srun -n $total_processes podman-hpc run --mpi --rm                          \
+    --volume /pscratch/sd/b/bthorne/fairuniverse/hsc_dataset:/snapshot_dir  \
+    --volume $PWD/scripts:/scripts                                          \
+    --volume $PWD/data:/data                                                \
+    --volume $PWD/plots:/plots                                              \
     fpm:latest python3 /scripts/baryons/fit_TNG100.py
 

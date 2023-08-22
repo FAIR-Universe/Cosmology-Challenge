@@ -206,10 +206,17 @@ class FastPM_EGD_Likelihood(object):
         print(params, flush=True)
         if params[0] < 1:
             return -np.inf
-        pos = EGD(self.cat, params[0], params[1])
-        Pk = FFTPower(pos, Nmesh=self.Nmesh, kmax=self.kmax).power
+        shift = EGD(self.cat, params[0], params[1])
+        self.cat["EGD_Position"] = self.cat["Position"] + shift
+        print("Finished EGD_position calculations")
+        Pk = FFTPower(
+            self.cat, Nmesh=self.Nmesh, kmax=self.kmax, position="EGD_Position"
+        ).power
+        print("Finished Power spectrum calculations")
         delta_Pk = Pk["power"].real - Pk.attrs["shotnoise"] - self.Pk_target
-        return -0.5 * np.dot(delta_Pk, np.linalg.solve(self.cov_Pk, delta_Pk))
+        lkl = -0.5 * np.dot(delta_Pk, np.linalg.solve(self.cov_Pk, delta_Pk))
+        print(lkl)
+        return lkl
 
 
 def main():
@@ -219,7 +226,7 @@ def main():
     colz = f"z{z:.2f}".replace(".", "")
 
     # Power spectrum parameters
-    Nmesh_Pk = 1024
+    Nmesh_Pk = 256
     kmax = 10.0
 
     # Emcee parameters
