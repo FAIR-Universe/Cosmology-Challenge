@@ -6,4 +6,4 @@
 #SBATCH -J mpi4py_test
 #SBATCH -o logs/mpi4py_test-%j.txt
 
-srun -n 64 podman-hpc run --rm --mpi registry.nersc.gov/m4287/bthorne/fpm:latest python3 scripts/tests/test_mpi.py
+srun -n 64 podman-hpc run --rm --mpi fpm:latest python3 scripts/tests/test_mpi.py

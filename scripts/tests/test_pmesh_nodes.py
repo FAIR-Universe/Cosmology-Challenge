@@ -14,9 +14,9 @@ COMM = MPI.COMM_WORLD
 RANK = COMM.Get_rank()
 SIZE = COMM.Get_size()
 
-print("Reporting from rank {}".format(RANK))
+NMESH = 1024
 
-REDSHIFTS = np.loadtxt("/data/baryons/redshifts.txt")
+print("Reporting from rank {}".format(RANK))
 
 SNAPSHOT_DIR = "/snapshot_dir/fastpm_box704/TNG_new_n4"
 
@@ -24,6 +24,7 @@ SNAPSHOT_DIR = "/snapshot_dir/fastpm_box704/TNG_new_n4"
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--title", type=str)
     args = parser.parse_args()
     params = vars(args)
     return params
@@ -37,10 +38,10 @@ def get_subdirectories(root_dir):
     ]
 
 
-def read_mesh_and_paint(path, Nmesh=256):
+def read_mesh_and_paint(path):
     snapshot = BigFileCatalog(path, dataset="1", comm=COMM)
-    mesh = snapshot.to_mesh(Nmesh=Nmesh, resampler="tsc")
-    return mesh.paint(mode="real").preview(axes=[1, 2], Nmesh=Nmesh)
+    mesh = snapshot.to_mesh(Nmesh=NMESH, resampler="tsc")
+    return (path, mesh.paint(mode="real").preview(axes=[1, 2], Nmesh=NMESH))
 
 
 if RANK == 0:
@@ -71,8 +72,13 @@ if RANK == 0:
     nrows = 4
     ncols = 4
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(15, 15))
+    fig.suptitle(f"Nodes: {params['title']}")
     axes = axes.flatten()
     for one_plus_delta, ax in zip(one_plus_deltas, axes):
-        ax.imshow(np.log10(one_plus_delta))
-    axes[-1].imshow(one_plus_deltas[-1] - one_plus_deltas[0])
-    fig.savefig(params["output"], bbox_inches="tight")
+        (path, img) = one_plus_delta
+        ax.imshow(np.log10(img))
+        ax.xaxis.set_visible(False)
+        ax.yaxis.set_visible(False)
+        ax.set_title(path.split("/")[-1])
+        fig.savefig(f"{params['output']}_Nmesh{NMESH}.pdf", bbox_inches="tight")
+        fig.savefig(f"{params['output']}_Nmesh{NMESH}.png", bbox_inches="tight")
