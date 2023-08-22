@@ -203,8 +203,7 @@ class FastPM_EGD_Likelihood(object):
         return
 
     def __call__(self, params):
-        if RANK == 0:
-            print(f"Gamma {params[0]:.3f}, beta {params[1]:.3f}", flush=True)
+        print(params, flush=True)
         if params[0] < 1:
             return -np.inf
         pos = EGD(self.cat, params[0], params[1])
@@ -231,28 +230,29 @@ def main():
     FPM704_redshifts = get_FastPM_redshifts_from_directories(FASTPM704_SNAPSHOTS_PATH)
     df = get_TNG100_ratio()
     df = interpolate_TNG100_redshifts(df, FPM704_redshifts)
-
+    print(f"Process {RANK} reached checkpoint 1", flush=True)
     # Interpolate TNG100 wavenumbers to match FASTPM wavenumbers.
 
     if RANK == 0:
         ks = np.logspace(-2, 1, 100)
         Pkratio = interpolate_TNG100_Pkratio(df, colz, ks)
         plot_interpolated_Pk_ratio(df, Pkratio, colz, ks)
-
+    print(f"Process {RANK} reached checkpoint 2", flush=True)
     # Calculate the target power spectrum (Pk_TNG100_ratio * Pk_FASTPM)
     # Calculate Pk_FASTPM704
     cat = BigFileCatalog(
         f"{FASTPM704_SNAPSHOTS_PATH}/Om_0.3089_S8_0.8159_{a:.4f}", dataset="1"
     )
+    cat.attrs["Nmesh"] = Nmesh_Pk
     Pk_fastpm704 = FFTPower(cat, mode="1d", Nmesh=Nmesh_Pk, kmax=kmax).power
-
+    print(f"Process {RANK} reached checkpoint 3", flush=True)
     target_Pk = (
         Pk_fastpm704["power"].real - Pk_fastpm704.attrs["shotnoise"]
     ) * interpolate_TNG100_Pkratio(df, colz, Pk_fastpm704["k"])
 
     # Calculate the covariance matrix (assumed diagonal).
     cov_Pk = get_covariance_matrix(Pk_fastpm704["k"], target_Pk)
-
+    print(f"Process {RANK} reached checkpoint 4", flush=True)
     if RANK == 0:
         plot_PkFastPM(Pk_fastpm704, target_Pk, cov_Pk)
 
@@ -260,15 +260,23 @@ def main():
     lkl = FastPM_EGD_Likelihood(target_Pk, cov_Pk, cat, Nmesh=Nmesh_Pk, kmax=kmax)
 
     # Perform sampling.
+    COMM.Barrier()
+    print(f"Process {RANK} reached checkpoint 5", flush=True)
     if RANK == 0:
-        print("Starting sampling...")
-        backend = emcee.backends.HDFBackend("/data/baryons/checkpoint.h5")
-        p0 = [np.random.rand(ndim) for i in range(nwalkers)]
-        sampler = emcee.EnsembleSampler(
-            nwalkers, ndim, lkl, backend=backend, progress=True
-        )
+        print("Starting sampling...", flush=True)
+        # backend = emcee.backends.HDFBackend("/data/baryons/checkpoint.h5")
+
+        # gamma: uniform distribution in [1, 2]
+        p1_init = np.random.uniform(1, 2, nwalkers)
+
+        # beta: uniform distribution in [0, 2]
+        p2_init = np.random.uniform(0, 2, nwalkers)
+
+        # Combine into initial positions array
+        p0 = np.column_stack((p1_init, p2_init))
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lkl)
         sampler.run_mcmc(
-            p0, 10, progress=True
+            p0, 100, progress=True
         )  # 1000 is the number of samples; you can adjust as needed
         samples = sampler.get_chain(
             discard=1, thin=1, flat=True
