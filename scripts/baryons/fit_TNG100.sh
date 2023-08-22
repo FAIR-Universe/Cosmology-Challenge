@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --qos=debug
-#SBATCH -N 1
+#SBATCH -N 4
 #SBATCH -C cpu
 #SBATCH -t 00:30:00
 #SBATCH -J fit_baryons
