@@ -14,4 +14,5 @@ COPY src/ src/
 COPY setup.py setup.py
 RUN pip install .
 
+RUN pip install emcee
 WORKDIR /opt

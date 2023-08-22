@@ -1,12 +1,14 @@
 import pandas as pd
 import numpy as np
 from scipy.interpolate import interp1d
-from pathlib import Path
-from nbodykit.source.catalog.file import BigFileCatalog
 import matplotlib.pyplot as plt
 from mpi4py import MPI
+
 import os
+
+from nbodykit.source.catalog.file import BigFileCatalog
 from nbodykit.lab import FFTPower
+from wlchallenge.egd import EGD
 
 
 COMM = MPI.COMM_WORLD
@@ -98,6 +100,25 @@ def interpolate_TNG100_Pkratio(df, redshift_column, wavenumbers):
     return interpolated_power
 
 
+def get_covariance_matrix(ks, Pk):
+    """Calculate diagonal covariance matrix for power spectrum.
+
+    We assume that the covariance matrix is diagonal, so we only need to
+    calculate the variance of each power spectrum bin. The variance
+    is assumed to be given by:
+
+    .. math::
+        \mathrm{Var}(P(k)) = (0.1 * P(k)) ^ 2
+
+    As this was found to give empirically good results in Dai et al 2018.
+
+    Args:
+        ks (ndarray): Wavenumbers in h/Mpc.
+        Pk (ndarray): Power in corresponding bins.
+    """
+    return (0.1 * np.diag(Pk)) ** 2
+
+
 def plot_interpolated_Pk_ratio(df, Pkratio, colz, ks):
     title = f"Interpolated ratio at {colz}"
     fig = plt.figure(figsize=(7.2, 6.5))
@@ -137,8 +158,10 @@ def plot_interpolated_Pk_ratio(df, Pkratio, colz, ks):
     fig.savefig(f"/plots/baryons/Pkratio_interp_{colz}.pdf", bbox_inches="tight")
 
 
-def plot_PkFastPM(Pk, target_Pk):
+def plot_PkFastPM(Pk, target_Pk, cov_Pk):
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+
+    sigma_Pk = np.sqrt(np.diag(cov_Pk))
 
     ax.loglog(
         Pk["k"],
@@ -147,6 +170,11 @@ def plot_PkFastPM(Pk, target_Pk):
         color="k",
         linestyle="-",
     )
+
+    lower = Pk["power"].real - Pk.attrs["shotnoise"] - sigma_Pk
+    upper = Pk["power"].real - Pk.attrs["shotnoise"] + sigma_Pk
+    ax.fill_between(Pk["k"], lower, upper, color="gray", alpha=0.5)
+
     ax.loglog(
         Pk["k"],
         target_Pk,
@@ -154,11 +182,28 @@ def plot_PkFastPM(Pk, target_Pk):
         color="lightskyblue",
         linestyle="--",
     )
+
     ax.legend(loc=3, frameon=False)
     ax.set_xlabel(r"$k$ [$h \ \mathrm{Mpc}^{-1}$]")
     ax.set_ylabel(r"$P(k)/ P^{\rm FastPM}(k)$")
     ax.set_xlim(0.1, 10)
-    fig.savefig("/plots/baryons/FastPM704_Pk.png", bbox_inches="tight")
+    fig.savefig("/plots/baryons/FastPM704_Pk.pdf", bbox_inches="tight")
+
+
+class FastPM_EGD_Likelihood(object):
+    def __init__(self, Pk_target, cov_Pk, cat, Nmesh=1024, kmax=10):
+        self.Pk_target = Pk_target
+        self.cov_Pk = cov_Pk
+        self.cat = cat
+        self.Nmesh = Nmesh
+        self.kmax = kmax
+        return
+
+    def __call__(self, params):
+        pos = EGD(self.cat, params[0], params[1])
+        Pk = FFTPower(pos, Nmesh=self.Nmesh, kmax=self.kmax).power
+        delta_Pk = Pk["power"].real - Pk.attrs["shotnoise"] - self.Pk_target
+        return -0.5 * np.dot(delta_Pk, np.linalg.solve(self.cov_Pk, delta_Pk))
 
 
 def main():
@@ -184,20 +229,23 @@ def main():
     cat = BigFileCatalog(
         f"{FASTPM704_SNAPSHOTS_PATH}/Om_0.3089_S8_0.8159_{a:.4f}", dataset="1"
     )
-    Pk_fastpm704 = FFTPower(cat, mode="1d", Nmesh=Nmesh_Pk).power
+    Pk_fastpm704 = FFTPower(cat, mode="1d", Nmesh=Nmesh_Pk, kmax=10).power
 
     target_Pk = (
         Pk_fastpm704["power"].real - Pk_fastpm704.attrs["shotnoise"]
     ) * interpolate_TNG100_Pkratio(df, colz, Pk_fastpm704["k"])
 
-    if RANK == 0:
-        plot_PkFastPM(Pk_fastpm704, target_Pk)
-
     # Calculate the covariance matrix (assumed diagonal).
+    cov_Pk = get_covariance_matrix(Pk_fastpm704["k"], target_Pk)
+
+    if RANK == 0:
+        plot_PkFastPM(Pk_fastpm704, target_Pk, cov_Pk)
 
     # Set up likelihood function for EGD parameters.
+    lkl = FastPM_EGD_Likelihood(target_Pk, cov_Pk, cat, Nmesh=Nmesh_Pk, kmax=10.0)
 
     # Perform sampling.
+
     return
 
 
