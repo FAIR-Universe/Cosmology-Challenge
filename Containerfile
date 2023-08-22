@@ -15,4 +15,6 @@ COPY setup.py setup.py
 RUN pip install .
 
 RUN pip install emcee
+RUN pip install corner
+RUN pip install h5py
 WORKDIR /opt
