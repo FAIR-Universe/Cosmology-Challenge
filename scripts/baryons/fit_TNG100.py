@@ -6,6 +6,7 @@ from nbodykit.source.catalog.file import BigFileCatalog
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 import os
+from nbodykit.lab import FFTPower
 
 
 COMM = MPI.COMM_WORLD
@@ -136,29 +137,61 @@ def plot_interpolated_Pk_ratio(df, Pkratio, colz, ks):
     fig.savefig(f"/plots/baryons/Pkratio_interp_{colz}.pdf", bbox_inches="tight")
 
 
+def plot_PkFastPM(Pk, target_Pk):
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+
+    ax.loglog(
+        Pk["k"],
+        Pk["power"].real - Pk.attrs["shotnoise"],
+        label="FastPM 704",
+        color="k",
+        linestyle="-",
+    )
+    ax.loglog(
+        Pk["k"],
+        target_Pk,
+        label="Target",
+        color="lightskyblue",
+        linestyle="--",
+    )
+    ax.legend(loc=3, frameon=False)
+    ax.set_xlabel(r"$k$ [$h \ \mathrm{Mpc}^{-1}$]")
+    ax.set_ylabel(r"$P(k)/ P^{\rm FastPM}(k)$")
+    ax.set_xlim(0.1, 10)
+    fig.savefig("/plots/baryons/FastPM704_Pk.png", bbox_inches="tight")
+
+
 def main():
     a = 0.6579
     z = 1 / a - 1
     colz = f"z{z:.2f}".replace(".", "")
     new_ks = np.logspace(-2, 1, 100)
+    Nmesh_Pk = 1024
 
     # Interpolate TNG100 redshifts to match FASTPM redshifts.
     FPM704_redshifts = get_FastPM_redshifts_from_directories(FASTPM704_SNAPSHOTS_PATH)
     df = get_TNG100_ratio()
     df = interpolate_TNG100_redshifts(df, FPM704_redshifts)
+
+    # Interpolate TNG100 wavenumbers to match FASTPM wavenumbers.
     Pkratio = interpolate_TNG100_Pkratio(df, colz, new_ks)
 
     if RANK == 0:
         plot_interpolated_Pk_ratio(df, Pkratio, colz, new_ks)
 
+    # Calculate the target power spectrum (Pk_TNG100_ratio * Pk_FASTPM)
     # Calculate Pk_FASTPM704
     cat = BigFileCatalog(
-        f"{FASTPM704_SNAPSHOTS_PATH}/Om_0.3089_S8_0.8159_0.2494", dataset="1"
+        f"{FASTPM704_SNAPSHOTS_PATH}/Om_0.3089_S8_0.8159_{a:.4f}", dataset="1"
     )
+    Pk_fastpm704 = FFTPower(cat, mode="1d", Nmesh=Nmesh_Pk).power
 
-    # Interpolate TNG100 wavenumbers to match FASTPM wavenumbers.
+    target_Pk = (
+        Pk_fastpm704["power"].real - Pk_fastpm704.attrs["shotnoise"]
+    ) * interpolate_TNG100_Pkratio(df, colz, Pk_fastpm704["k"])
 
-    # Calculate the target power spectrum (Pk_TNG100_ratio * Pk_FASTPM)
+    if RANK == 0:
+        plot_PkFastPM(Pk_fastpm704, target_Pk)
 
     # Calculate the covariance matrix (assumed diagonal).
 

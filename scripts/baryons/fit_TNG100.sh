@@ -6,10 +6,10 @@
 #SBATCH -J fit_baryons
 #SBATCH -o logs/fit_baryons-%j.txt
 
-srun -n 1 podman-hpc run --mpi --rm \
+srun -n 128 podman-hpc run --mpi --rm \
     --volume /pscratch/sd/b/bthorne/fairuniverse/hsc_dataset:/snapshot_dir \
     --volume $PWD/scripts:/scripts \
     --volume $PWD/data:/data \
     --volume $PWD/plots:/plots \
-    fpm:latest python3 /scripts/baryons/fit_TNG100.py \
+    fpm:latest python3 /scripts/baryons/fit_TNG100.py
 
