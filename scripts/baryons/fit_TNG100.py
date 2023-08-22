@@ -1,5 +1,16 @@
 import pandas as pd
 import numpy as np
+from scipy.interpolate import interp1d
+from pathlib import Path
+from nbodykit.source.catalog.file import BigFileCatalog
+import matplotlib.pyplot as plt
+from mpi4py import MPI
+import os
+
+
+COMM = MPI.COMM_WORLD
+RANK = COMM.Get_rank()
+SIZE = COMM.Get_size()
 
 """Script assumes that the following /data directory
 is mounted.
@@ -13,6 +24,36 @@ FASTPM1536_SNAPSHOTS_PATH = "/snapshot_dir/fastpm_box1536/TNG"
 TNG100_REDSHIFTS = np.array(
     [3.71, 3.49, 3.28, 2.90, 2.44, 2.1, 1.74, 1.41, 1.04, 0.7, 0.35, 0.18, 0.0]
 )
+TNG100_REDSHIFT_COLUMNS = [
+    f"z{redshift:.2f}".replace(".", "") for redshift in TNG100_REDSHIFTS
+]
+
+
+def get_subdirectories(root_dir):
+    return [
+        os.path.join(root_dir, d)
+        for d in os.listdir(root_dir)
+        if os.path.isdir(os.path.join(root_dir, d))
+    ]
+
+
+def get_FastPM_scales_from_directories(dir):
+    paths = get_subdirectories(dir)
+    # Snapshot directories saved with scale factor to 4 decimal places at
+    # end of path.
+    return [float(path[-6:]) for path in paths]
+
+
+def get_FastPM_redshifts_from_directories(dir):
+    return list(map(scale_to_redshift, get_FastPM_scales_from_directories(dir)))
+
+
+def redshift_to_scale(z):
+    return 1.0 / (1.0 + z)
+
+
+def scale_to_redshift(a):
+    return 1.0 / a - 1.0
 
 
 def get_TNG100_ratio():
@@ -23,16 +64,97 @@ def get_TNG100_redshifts():
     return [f"z{redshift:.2f}".replace(".", "") for redshift in TNG100_REDSHIFTS]
 
 
-def get_covariance():
-    return
+def interpolate_TNG100_redshifts(df, new_redshifts):
+    # Interpolating for each row (power spectrum at a given scale) across z
+    for new_redshift in new_redshifts:
+        new_column = []
+        for _, row in df.iterrows():
+            power_values = row[TNG100_REDSHIFT_COLUMNS].values
+            interpolator = interp1d(TNG100_REDSHIFTS, power_values, kind="linear")
+            interpolated_value = interpolator(new_redshift)
+            new_column.append(interpolated_value)
+        df[f"z{new_redshift:.2f}".replace(".", "")] = new_column
+    return df
 
 
-def interpolate_TNG100_ratio(new_redshifts):
-    return
+def interpolate_TNG100_Pkratio(df, redshift_column, wavenumbers):
+    # Extract the log wavenumbers and power for the specified redshift
+    logk_values = df["logk"].values
+    log_power_values = df[redshift_column].values
+
+    # We need to convert logk_values and log power values back to
+    # k_values and ratios for interpolation
+    k_values = 10**logk_values
+    power_values = 10**log_power_values
+    interpolator = interp1d(
+        k_values, power_values, kind="cubic", fill_value="extrapolate"
+    )
+
+    # Use the interpolating function to calculate the power at the specified
+    # wavenumbers
+    interpolated_power = interpolator(wavenumbers)
+
+    return interpolated_power
+
+
+def plot_interpolated_Pk_ratio(df, Pkratio, colz, ks):
+    title = f"Interpolated ratio at {colz}"
+    fig = plt.figure(figsize=(7.2, 6.5))
+    plt.rc("font", size=20)
+
+    ax1 = fig.add_axes([0.158, 0.11, 0.813, 0.84])
+
+    ax1.plot(
+        10 ** df["logk"],
+        10 ** df[colz] - 1,
+        label=r"$\mathrm{TNG100}$",
+        color="lightskyblue",
+        lw=3,
+        ls="-.",
+    )
+    ax1.plot(
+        ks,
+        Pkratio - 1,
+        label=r"$\mathrm{TNG100}~{}\rm interp$",
+        color="green",
+        lw=3,
+        ls=":",
+    )
+
+    ax1.axhline(y=0, color="gray", linestyle="-", label=r"$\mathrm{DMO}$", lw=4)
+    ax1.axvline(x=30, color="k", linestyle="--")
+
+    ax1.set_xscale("log")
+    ax1.set_xlabel(r"$\mathrm{k\ [Mpc^{-1}h]}$")
+    ax1.set_ylabel(r"$\mathrm{P_{\delta}^{hydro}(k)/P_{\delta}^{DMO}(k)-1}$")
+    ax1.set_title(title)
+
+    ax1.set_xlim(0.05, 5)
+
+    ax1.legend(loc="best", prop={"size": 14.5}, ncol=2, frameon=False)
+    ax1.set_ylim(-0.4, 0.9)
+    fig.savefig(f"/plots/baryons/Pkratio_interp_{colz}.pdf", bbox_inches="tight")
 
 
 def main():
+    a = 0.6579
+    z = 1 / a - 1
+    colz = f"z{z:.2f}".replace(".", "")
+    new_ks = np.logspace(-2, 1, 100)
+
     # Interpolate TNG100 redshifts to match FASTPM redshifts.
+    FPM704_redshifts = get_FastPM_redshifts_from_directories(FASTPM704_SNAPSHOTS_PATH)
+    df = get_TNG100_ratio()
+    df = interpolate_TNG100_redshifts(df, FPM704_redshifts)
+    Pkratio = interpolate_TNG100_Pkratio(df, colz, new_ks)
+
+    if RANK == 0:
+        plot_interpolated_Pk_ratio(df, Pkratio, colz, new_ks)
+
+    # Calculate Pk_FASTPM704
+    cat = BigFileCatalog(
+        f"{FASTPM704_SNAPSHOTS_PATH}/Om_0.3089_S8_0.8159_0.2494", dataset="1"
+    )
 
     # Interpolate TNG100 wavenumbers to match FASTPM wavenumbers.
 
