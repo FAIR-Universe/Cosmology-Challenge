@@ -10,6 +10,7 @@ from nbodykit.source.catalog.file import BigFileCatalog
 from nbodykit.lab import FFTPower
 from wlchallenge.egd import EGD
 import emcee
+import corner
 
 COMM = MPI.COMM_WORLD
 RANK = COMM.Get_rank()
@@ -155,6 +156,7 @@ def plot_interpolated_Pk_ratio(df, Pkratio, colz, ks):
 
     ax1.legend(loc="best", prop={"size": 14.5}, ncol=2, frameon=False)
     ax1.set_ylim(-0.4, 0.9)
+    print(f"Saving to /plots/baryons/Pkratio_interp_{colz}.pdf")
     fig.savefig(f"/plots/baryons/Pkratio_interp_{colz}.pdf", bbox_inches="tight")
 
 
@@ -187,6 +189,7 @@ def plot_PkFastPM(Pk, target_Pk, cov_Pk):
     ax.set_xlabel(r"$k$ [$h \ \mathrm{Mpc}^{-1}$]")
     ax.set_ylabel(r"$P(k)/ P^{\rm FastPM}(k)$")
     ax.set_xlim(0.1, 10)
+    print("Saving to /plots/baryons/FastPM704_Pk.pdf")
     fig.savefig("/plots/baryons/FastPM704_Pk.pdf", bbox_inches="tight")
 
 
@@ -200,6 +203,8 @@ class FastPM_EGD_Likelihood(object):
         return
 
     def __call__(self, params):
+        if RANK == 0:
+            print(f"Gamma {params[0]:.3f}, beta {params[1]:.3f}", flush=True)
         if params[0] < 1:
             return -np.inf
         pos = EGD(self.cat, params[0], params[1])
@@ -209,11 +214,18 @@ class FastPM_EGD_Likelihood(object):
 
 
 def main():
+    # Snapshot parameters
     a = 0.6579
     z = 1 / a - 1
     colz = f"z{z:.2f}".replace(".", "")
-    new_ks = np.logspace(-2, 1, 100)
+
+    # Power spectrum parameters
     Nmesh_Pk = 1024
+    kmax = 10.0
+
+    # Emcee parameters
+    ndim = 2
+    nwalkers = 50
 
     # Interpolate TNG100 redshifts to match FASTPM redshifts.
     FPM704_redshifts = get_FastPM_redshifts_from_directories(FASTPM704_SNAPSHOTS_PATH)
@@ -221,17 +233,18 @@ def main():
     df = interpolate_TNG100_redshifts(df, FPM704_redshifts)
 
     # Interpolate TNG100 wavenumbers to match FASTPM wavenumbers.
-    Pkratio = interpolate_TNG100_Pkratio(df, colz, new_ks)
 
     if RANK == 0:
-        plot_interpolated_Pk_ratio(df, Pkratio, colz, new_ks)
+        ks = np.logspace(-2, 1, 100)
+        Pkratio = interpolate_TNG100_Pkratio(df, colz, ks)
+        plot_interpolated_Pk_ratio(df, Pkratio, colz, ks)
 
     # Calculate the target power spectrum (Pk_TNG100_ratio * Pk_FASTPM)
     # Calculate Pk_FASTPM704
     cat = BigFileCatalog(
         f"{FASTPM704_SNAPSHOTS_PATH}/Om_0.3089_S8_0.8159_{a:.4f}", dataset="1"
     )
-    Pk_fastpm704 = FFTPower(cat, mode="1d", Nmesh=Nmesh_Pk, kmax=10).power
+    Pk_fastpm704 = FFTPower(cat, mode="1d", Nmesh=Nmesh_Pk, kmax=kmax).power
 
     target_Pk = (
         Pk_fastpm704["power"].real - Pk_fastpm704.attrs["shotnoise"]
@@ -244,10 +257,26 @@ def main():
         plot_PkFastPM(Pk_fastpm704, target_Pk, cov_Pk)
 
     # Set up likelihood function for EGD parameters.
-    lkl = FastPM_EGD_Likelihood(target_Pk, cov_Pk, cat, Nmesh=Nmesh_Pk, kmax=10.0)
+    lkl = FastPM_EGD_Likelihood(target_Pk, cov_Pk, cat, Nmesh=Nmesh_Pk, kmax=kmax)
 
     # Perform sampling.
-    emce
+    if RANK == 0:
+        print("Starting sampling...")
+        backend = emcee.backends.HDFBackend("/data/baryons/checkpoint.h5")
+        p0 = [np.random.rand(ndim) for i in range(nwalkers)]
+        sampler = emcee.EnsembleSampler(
+            nwalkers, ndim, lkl, backend=backend, progress=True
+        )
+        sampler.run_mcmc(
+            p0, 10, progress=True
+        )  # 1000 is the number of samples; you can adjust as needed
+        samples = sampler.get_chain(
+            discard=1, thin=1, flat=True
+        )  # Adjust discard and thin according to your needs
+
+        fig = corner.corner(samples, labels=["gamma", "beta"])
+        fig.savefig("/plots/baryons/posterior.pdf", bbox_inches="tight")
+        plt.show()
     return
 
 
