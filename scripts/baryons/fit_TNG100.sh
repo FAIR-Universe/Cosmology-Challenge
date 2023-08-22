@@ -7,6 +7,8 @@
 #SBATCH -o logs/fit_baryons-%j.txt
 
 export OMP_NUM_THREADS=1
+total_processes=$((SLURM_JOB_NUM_NODES * 128))
+
 
 srun -n 4 podman-hpc run --mpi --rm \
     --volume /pscratch/sd/b/bthorne/fairuniverse/hsc_dataset:/snapshot_dir \
