@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from mpi4py import MPI
 
 import os
+import argparse
 
 from nbodykit.source.catalog.file import BigFileCatalog
 from nbodykit.lab import FFTPower
@@ -33,7 +34,26 @@ TNG100_REDSHIFT_COLUMNS = [
 ]
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output_stub", type=str)
+    parser.add_argument("--kmax", type=float)
+    parser.add_argument("--Nmesh", type=float)
+    args = parser.parse_args()
+    return vars(args)
+
+
 def get_subdirectories(root_dir):
+    """Get list of all subdirectories in a given directory.
+
+    This exclues files.
+
+    Args:
+        root_dir (str): Directory to search.
+
+    Returns:
+        list(str): List of strings of subdirectory paths.
+    """
     return [
         os.path.join(root_dir, d)
         for d in os.listdir(root_dir)
@@ -42,6 +62,19 @@ def get_subdirectories(root_dir):
 
 
 def get_FastPM_scales_from_directories(dir):
+    """The format of saved FastPM runs contains the scale
+    factor of the saved snapshot at the end of the path.
+
+    This function walks a directory of snapshots and
+    returns a list of the scale factors of the snapshots.
+
+    Args:
+        dir (str): path to directory containing snapshots
+
+    Returns:
+        list(float): List of the scale factors of the snapshots
+        in the given directory.
+    """
     paths = get_subdirectories(dir)
     # Snapshot directories saved with scale factor to 4 decimal places at
     # end of path.
@@ -117,6 +150,9 @@ def get_covariance_matrix(ks, Pk):
         ks (ndarray): Wavenumbers in h/Mpc.
         Pk (ndarray): Power in corresponding bins.
     """
+    if np.isnan(Pk).any():
+        # NaNs caused by too-low Nmesh can result in high-k NaNs.
+        raise ValueError("Pk contains NaNs, try increasing Nmesh")
     return (0.1 * np.diag(Pk)) ** 2
 
 
@@ -194,57 +230,75 @@ def plot_PkFastPM(Pk, target_Pk, cov_Pk):
 
 
 class FastPM_EGD_Likelihood(object):
-    def __init__(self, Pk_target, cov_Pk, cat, Nmesh=1024, kmax=10):
+    def __init__(self, Pk_target, cov_Pk, cat, Nmesh=1024, kmax=10, verbose=False):
         self.Pk_target = Pk_target
         self.cov_Pk = cov_Pk
+        self.log_det_cov_Pk = np.log(
+            1.0
+            / ((2 * np.pi) ** (len(Pk_target) / 2.0) * np.sqrt(np.linalg.det(cov_Pk)))
+        )
         self.cat = cat
         self.Nmesh = Nmesh
         self.kmax = kmax
+        self.verbose = verbose
         return
 
     def __call__(self, params):
-        print(params, flush=True)
+        if self.verbose and RANK == 0:
+            print(params, flush=True)
         if params[0] < 1:
+            return -np.inf
+        if params[1] < 0:
             return -np.inf
         shift = EGD(self.cat, params[0], params[1])
         self.cat["EGD_Position"] = self.cat["Position"] + shift
-        print("Finished EGD_position calculations")
-        Pk = FFTPower(
-            self.cat, Nmesh=self.Nmesh, kmax=self.kmax, position="EGD_Position"
-        ).power
-        print("Finished Power spectrum calculations")
+        mesh = self.cat.to_mesh(
+            resampler="tsc", Nmesh=self.Nmesh, compensated=True, position="EGD_Position"
+        )
+        Pk = FFTPower(mesh, kmax=self.kmax, mode="1d").power
+        if np.isnan(Pk["power"].real).any():
+            return -np.inf
         delta_Pk = Pk["power"].real - Pk.attrs["shotnoise"] - self.Pk_target
-        lkl = -0.5 * np.dot(delta_Pk, np.linalg.solve(self.cov_Pk, delta_Pk))
-        print(lkl)
+        lkl = (
+            -0.5 * delta_Pk.T @ np.linalg.inv(self.cov_Pk) @ delta_Pk
+            + self.log_det_cov_Pk
+        )
+        if self.verbose and RANK == 0:
+            print(self.cov_Pk, flush=True)
+            print(np.linalg.inv(self.cov_Pk).shape, flush=True)
+            print(np.linalg.inv(self.cov_Pk), flush=True)
+            print(delta_Pk, flush=True)
+            print("delta_Pk shape", delta_Pk.shape, flush=True)
+            print("lkl: ", lkl, flush=True)
         return lkl
 
 
 def main():
+    args = parse_args()
     # Snapshot parameters
     a = 0.6579
     z = 1 / a - 1
     colz = f"z{z:.2f}".replace(".", "")
 
     # Power spectrum parameters
-    Nmesh_Pk = 256
-    kmax = 10.0
+    Nmesh_Pk = args["Nmesh"]
+    kmax = args["kmax"]
 
     # Emcee parameters
     ndim = 2
-    nwalkers = 50
+    nwalkers = 4
+    nsamples = 100
 
     # Interpolate TNG100 redshifts to match FASTPM redshifts.
     FPM704_redshifts = get_FastPM_redshifts_from_directories(FASTPM704_SNAPSHOTS_PATH)
     df = get_TNG100_ratio()
     df = interpolate_TNG100_redshifts(df, FPM704_redshifts)
-    print(f"Process {RANK} reached checkpoint 1", flush=True)
     # Interpolate TNG100 wavenumbers to match FASTPM wavenumbers.
 
     if RANK == 0:
         ks = np.logspace(-2, 1, 100)
         Pkratio = interpolate_TNG100_Pkratio(df, colz, ks)
         plot_interpolated_Pk_ratio(df, Pkratio, colz, ks)
-    print(f"Process {RANK} reached checkpoint 2", flush=True)
     # Calculate the target power spectrum (Pk_TNG100_ratio * Pk_FASTPM)
     # Calculate Pk_FASTPM704
     cat = BigFileCatalog(
@@ -252,43 +306,37 @@ def main():
     )
     cat.attrs["Nmesh"] = Nmesh_Pk
     Pk_fastpm704 = FFTPower(cat, mode="1d", Nmesh=Nmesh_Pk, kmax=kmax).power
-    print(f"Process {RANK} reached checkpoint 3", flush=True)
     target_Pk = (
         Pk_fastpm704["power"].real - Pk_fastpm704.attrs["shotnoise"]
     ) * interpolate_TNG100_Pkratio(df, colz, Pk_fastpm704["k"])
 
     # Calculate the covariance matrix (assumed diagonal).
     cov_Pk = get_covariance_matrix(Pk_fastpm704["k"], target_Pk)
-    print(f"Process {RANK} reached checkpoint 4", flush=True)
     if RANK == 0:
         plot_PkFastPM(Pk_fastpm704, target_Pk, cov_Pk)
 
     # Set up likelihood function for EGD parameters.
-    lkl = FastPM_EGD_Likelihood(target_Pk, cov_Pk, cat, Nmesh=Nmesh_Pk, kmax=kmax)
+    lkl = FastPM_EGD_Likelihood(
+        target_Pk, cov_Pk, cat, Nmesh=Nmesh_Pk, kmax=kmax, verbose=True
+    )
 
-    # Perform sampling.
     COMM.Barrier()
-    print(f"Process {RANK} reached checkpoint 5", flush=True)
+
+    # gamma: uniform distribution in [1, 2]
+    np.random.seed(123)
+    p1_init = np.random.uniform(1, 2, nwalkers)
+
+    # beta: uniform distribution in [0, 2]
+    p2_init = np.random.uniform(0, 2, nwalkers)
+
+    # Combine into initial positions array
+    p0 = np.column_stack((p1_init, p2_init))
+    # Run sampling (this currently runs on all MPI ranks)
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, lkl)
+    sampler.run_mcmc(p0, nsamples)
+    samples = sampler.get_chain(discard=1, thin=1, flat=True)
     if RANK == 0:
-        print("Starting sampling...", flush=True)
-        # backend = emcee.backends.HDFBackend("/data/baryons/checkpoint.h5")
-
-        # gamma: uniform distribution in [1, 2]
-        p1_init = np.random.uniform(1, 2, nwalkers)
-
-        # beta: uniform distribution in [0, 2]
-        p2_init = np.random.uniform(0, 2, nwalkers)
-
-        # Combine into initial positions array
-        p0 = np.column_stack((p1_init, p2_init))
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, lkl)
-        sampler.run_mcmc(
-            p0, 100, progress=True
-        )  # 1000 is the number of samples; you can adjust as needed
-        samples = sampler.get_chain(
-            discard=1, thin=1, flat=True
-        )  # Adjust discard and thin according to your needs
-
+        np.savetxt(f"/data/baryons/samples_{args['output_stub']}.txt", samples)
         fig = corner.corner(samples, labels=["gamma", "beta"])
         fig.savefig("/plots/baryons/posterior.pdf", bbox_inches="tight")
         plt.show()
