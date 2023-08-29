@@ -1,12 +1,3 @@
-## TODO
-
-- Check out MP-Gadget examples from HPSS. 
-- Write likelihood code for given target spectra. 
-- Recap photo z uncertainty and summarize Biwei method on slide. 
-- Finish metrics slide.
-- Compile fastpm
-
-
 ## Simulations summary
 
 Each weak lensing map is constructed from three simulation boxes covering different redshift ranges, with different box sizes and resolutions. The priors over which cosmological parameters are samples are:
