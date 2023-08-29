@@ -15,7 +15,7 @@ srun -n $total_processes podman-hpc run --mpi --rm                          \
     --volume $PWD/data:/data                                                \
     --volume $PWD/plots:/plots                                              \
     fpm:latest python3 /scripts/baryons/fit_TNG100.py                       \
-    --output_stub kmax10_Nmesh1024_${SLURM_JOB_ID}                          \ 
-    --kmax 10                                                               \                  
+    --output_stub kmax10_Nmesh1024_${SLURM_JOB_ID}                          \
+    --kmax 10                                                               \
     --Nmesh 1024
 
