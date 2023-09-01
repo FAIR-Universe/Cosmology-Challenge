@@ -6,6 +6,7 @@ from mpi4py import MPI
 
 import os
 import argparse
+import time
 
 from nbodykit.source.catalog.file import BigFileCatalog
 from nbodykit.lab import FFTPower
@@ -39,6 +40,8 @@ def parse_args():
     parser.add_argument("--output_stub", type=str)
     parser.add_argument("--kmax", type=float)
     parser.add_argument("--Nmesh", type=float)
+    parser.add_argument("--Nwalkers", type=int)
+    parser.add_argument("--Nsamples_per_walker", type=int)
     args = parser.parse_args()
     return vars(args)
 
@@ -196,7 +199,7 @@ def plot_interpolated_Pk_ratio(df, Pkratio, colz, ks):
     fig.savefig(f"/plots/baryons/Pkratio_interp_{colz}.pdf", bbox_inches="tight")
 
 
-def plot_PkFastPM(Pk, target_Pk, cov_Pk):
+def plot_PkFastPM(Pk, target_Pk, cov_Pk, output_stub):
     fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 
     sigma_Pk = np.sqrt(np.diag(cov_Pk))
@@ -226,7 +229,7 @@ def plot_PkFastPM(Pk, target_Pk, cov_Pk):
     ax.set_ylabel(r"$P(k)/ P^{\rm FastPM}(k)$")
     ax.set_xlim(0.1, 10)
     print("Saving to /plots/baryons/FastPM704_Pk.pdf")
-    fig.savefig("/plots/baryons/FastPM704_Pk.pdf", bbox_inches="tight")
+    fig.savefig(f"/plots/baryons/FastPM704_Pk_{output_stub}.pdf", bbox_inches="tight")
 
 
 class FastPM_EGD_Likelihood(object):
@@ -245,6 +248,7 @@ class FastPM_EGD_Likelihood(object):
 
     def __call__(self, params):
         if self.verbose and RANK == 0:
+            start = time.time()
             print(params, flush=True)
         if params[0] < 1:
             return -np.inf
@@ -264,12 +268,13 @@ class FastPM_EGD_Likelihood(object):
             + self.log_det_cov_Pk
         )
         if self.verbose and RANK == 0:
-            print(self.cov_Pk, flush=True)
-            print(np.linalg.inv(self.cov_Pk).shape, flush=True)
-            print(np.linalg.inv(self.cov_Pk), flush=True)
-            print(delta_Pk, flush=True)
+            # print(self.cov_Pk, flush=True)
+            # print(np.linalg.inv(self.cov_Pk).shape, flush=True)
+            # print(np.linalg.inv(self.cov_Pk), flush=True)
+            # print(delta_Pk, flush=True)
             print("delta_Pk shape", delta_Pk.shape, flush=True)
             print("lkl: ", lkl, flush=True)
+            print(f"Time for iteration {time.time() - start:.3f}")
         return lkl
 
 
@@ -286,8 +291,8 @@ def main():
 
     # Emcee parameters
     ndim = 2
-    nwalkers = 4
-    nsamples = 100
+    nwalkers = args["Nwalkers"]
+    nsamples = args["Nsamples_per_walker"]
 
     # Interpolate TNG100 redshifts to match FASTPM redshifts.
     FPM704_redshifts = get_FastPM_redshifts_from_directories(FASTPM704_SNAPSHOTS_PATH)
@@ -313,7 +318,7 @@ def main():
     # Calculate the covariance matrix (assumed diagonal).
     cov_Pk = get_covariance_matrix(Pk_fastpm704["k"], target_Pk)
     if RANK == 0:
-        plot_PkFastPM(Pk_fastpm704, target_Pk, cov_Pk)
+        plot_PkFastPM(Pk_fastpm704, target_Pk, cov_Pk, args["output_stub"])
 
     # Set up likelihood function for EGD parameters.
     lkl = FastPM_EGD_Likelihood(
@@ -329,14 +334,34 @@ def main():
     # beta: uniform distribution in [0, 2]
     p2_init = np.random.uniform(0, 2, nwalkers)
 
+    index = 0
+    autocorr = np.empty(nsamples)
     # Combine into initial positions array
     p0 = np.column_stack((p1_init, p2_init))
     # Run sampling (this currently runs on all MPI ranks)
     sampler = emcee.EnsembleSampler(nwalkers, ndim, lkl)
-    sampler.run_mcmc(p0, nsamples)
+
+    for sample in sampler.sample(p0, iterations=nsamples, progress=False):
+        if RANK == 0:
+            print(f"Iteration: {sampler.iteration}", flush=True)
+        if sampler.iteration % 10:
+            continue
+
+        tau = sampler.get_autocorr_time(tol=0)
+        autocorr[index] = np.mean(tau)
+        index += 1
+
+        np.savetxt(
+            f"/data/baryons/samples_{args['output_stub']}_Nwalkers{nwalkers}_Nsamp{nsamples}_iter{sampler.iteration:03d}.txt",
+            samples,
+        )
+
     samples = sampler.get_chain(discard=1, thin=1, flat=True)
     if RANK == 0:
-        np.savetxt(f"/data/baryons/samples_{args['output_stub']}.txt", samples)
+        np.savetxt(
+            f"/data/baryons/samples_{args['output_stub']}_Nwalkers{nwalkers}_Nsamp{nsamples}.txt",
+            samples,
+        )
         fig = corner.corner(samples, labels=["gamma", "beta"])
         fig.savefig("/plots/baryons/posterior.pdf", bbox_inches="tight")
         plt.show()
