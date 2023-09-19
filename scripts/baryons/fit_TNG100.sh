@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --qos=regular
-#SBATCH -N 4
+#SBATCH -N 8
 #SBATCH -C cpu
 #SBATCH -t 08:00:00
 #SBATCH -J fit_baryons
@@ -9,8 +9,8 @@
 export OMP_NUM_THREADS=1
 total_processes=$((SLURM_JOB_NUM_NODES * 128))
 Nmesh=1024
-kmax=10
-Nsamples=100
+kmax=8
+Nsamples=250
 Nwalkers=4
 
 srun -n $total_processes podman-hpc run --mpi --rm                                          \
