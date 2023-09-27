@@ -14,14 +14,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--simulation", type=int, default=0)
     parser.add_argument("--Nmesh", type=int, default=8192)
-    parser.add_argument(
-        "--base_dir", type=str, default="/global/cscratch1/sd/biwei/HSC/"
-    )
+    parser.add_argument("--base_dir", type=str, default="/snapshot_dir")
     parser.add_argument("--realization", type=int, default=None)
     parser.add_argument("--realization_start", type=int, default=0)
     parser.add_argument("--realization_end", type=int, default=100)
     parser.add_argument("--cosmology_file", type=Path, default="data/cosmology.txt")
     parser.add_argument("--redshifts_file", type=Path, default="data/redshifts.txt")
+    parser.add_argument("--weight_planes", action="store_true")
     args = parser.parse_args()
     params = vars(args)
 
@@ -60,14 +59,19 @@ def main():
 
     comoving_dis = np.array([cosmology.comoving_distance(z) for z in redshift])
 
-    weights_bin1 = np.load("weights_bin1_53.npy")
-    weights_bin2 = np.load("weights_bin2_53.npy")
-    weights_bin3 = np.load("weights_bin3_53.npy")
-    weights_bin4 = np.load("weights_bin4_53.npy")
-    weights_planes = np.array((weights_bin1, weights_bin2, weights_bin3, weights_bin4))
+    if params["weight_planes"]:
+        weights_bin1 = np.load("weights_bin1_53.npy")
+        weights_bin2 = np.load("weights_bin2_53.npy")
+        weights_bin3 = np.load("weights_bin3_53.npy")
+        weights_bin4 = np.load("weights_bin4_53.npy")
+        weights_planes = np.array(
+            (weights_bin1, weights_bin2, weights_bin3, weights_bin4)
+        )
+    else:
+        weights_planes = None
 
     pm = ParticleMesh(Nmesh=[Nmesh, Nmesh], BoxSize=[angle, angle])
-    grid = pm.generate_uniform_particle_grid()
+    grid = pm.generate_uniform_particle_grid(shift=0.5)
     x = grid[:, 0]
     y = grid[:, 1]
     del grid
@@ -103,7 +107,7 @@ def main():
         )
         plane_transpose = comm.bcast(
             np.random.randn(8) > 0 if comm.rank == 0 else None, root=0
-        )j
+        )
 
         t = time.time()
 
@@ -121,12 +125,16 @@ def main():
                     memory_efficient=True,
                 )
 
+                sim_path = str(
+                    Path(base_dir)
+                    / "LensingPlane"
+                    / f"{int(simulation):03d}_plane{snapshot_id:03d}_realization{plane_realization[index]:03d}_coherent"
+                )
+                if comm.rank == 0:
+                    print(sim_path, flush=True)
+
                 plane.load(
-                    base_dir
-                    + "LensingPlane/"
-                    + simulation
-                    + "_plane%d_realization%d_coherent"
-                    % (snapshot_id, plane_realization[index]),
+                    sim_path,
                     files=["potentialk"],
                 )
 
@@ -160,10 +168,15 @@ def main():
 
         # ray tracing
         # convergence_bins, shear_bins, convergence, shear, current_positions = Tracer.shoot(np.array((x, y)), z=redshift[-1], weight_planes=weights_planes, save_intermediate=False, IA=0, pz=None, Fz=None)
+        hessian_path = str(
+            Path(base_dir)
+            / "shearMatrix"
+            / f"{int(simulation):03d}_realization{realization:03d}_Nmesh{Nmesh}_plane43_shearMatrix_coherent"
+        )
         (
+            # convergence_bins, ## TODO : what were these doing here?
+            # shear_bins,
             convergence_bins,
-            shear_bins,
-            convergence,
             shear,
             current_positions,
         ) = Tracer.shoot(
@@ -174,14 +187,10 @@ def main():
             IA=0,
             pz=None,
             Fz=None,
-            save_Hessian=base_dir
-            + "shearMatrix/"
-            + simulation
-            + "_realization%d_Nmesh%d_plane43_shearMatrix_coherent"
-            % (realization, Nmesh),
+            save_Hessian=hessian_path,
             save_Nplane=43,
         )
-        del convergence, shear, current_positions, Tracer, plane
+        del shear, current_positions, Tracer, plane
         gc.collect()
 
         # convergence = GatherArray(convergence, comm, root=0)
@@ -191,13 +200,14 @@ def main():
 
         # save mock maps
         if comm.rank == 0:
+            kappa_path = str(
+                Path(base_dir)
+                / "kappa_maps"
+                / f"{simulation}_realization{realization}_Nmesh{Nmesh}_plane43_empty10_convergence_coherent.npy"
+            )
             np.save(
-                base_dir
-                + "kappa_maps/"
-                + simulation
-                + "_realization%d_Nmesh%d_plane43_empty10_convergence_coherent.npy"
-                % (realization, Nmesh),
-                convergence_bins.T.astype(np.float32).reshape(4, Nmesh, Nmesh),
+                kappa_path,
+                convergence_bins.T.astype(np.float32).reshape(1, Nmesh, Nmesh),
             )  # (4, Nmesh^2)
             # np.save(base_dir + 'kappa_maps/' + simulation + '_realization%d_Nmesh%d_plane43_empty10_final_convergence_coherent.npy'%(realization,Nmesh), convergence.astype(np.float32).reshape(Nmesh, Nmesh)) # (Nmesh^2)
             print(
@@ -215,7 +225,7 @@ def main():
         #    print('Finished realization', realization, 'Time:', time.time()-t, flush=True)
         #    print()
 
-        del convergence_bins, shear_bins
+        # del convergence_bins, shear_bins
         gc.collect()
 
 
