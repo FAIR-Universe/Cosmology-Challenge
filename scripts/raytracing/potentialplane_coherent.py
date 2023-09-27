@@ -12,13 +12,13 @@ def main():
     parser.add_argument(
         "--base_dir",
         type=Path,
-        default="/pscratch/sd/b/bthorne/fairuniverse/hsc_dataset",
+        default="/snapshot_dir",
     )
     parser.add_argument("--snapshot_start", type=int, default=0)
     parser.add_argument("--snapshot_end", type=int, default=43)
     parser.add_argument("--data_dir", type=Path, default="data")
-    parser.add_argument("--cosmology_file", type=Path, default="data/cosmology.txt")
-    parser.add_argument("--redshifts_file", type=Path, default="data/redshifts.txt")
+    parser.add_argument("--cosmology_file", type=Path, default="/data/cosmology.txt")
+    parser.add_argument("--redshifts_file", type=Path, default="/data/redshifts.txt")
     args = parser.parse_args()
     params = vars(args)
 
@@ -103,13 +103,11 @@ def main():
         if snapshot_id < 3:
             width = comoving_dis[snapshot_id] * angle * 3
             # periodic = False
-            # Nrealization = 36
-            Nrealization = 1
+            Nrealization = 36
         else:
             width = boxsize
             # periodic = True
-            # Nrealization = 18
-            Nrealization = 1
+            Nrealization = 18
 
         Nmesh = 2 ** round(np.log2(width / comoving_dis[snapshot_id] / resolution))
         if snapshot_id > 32:
