@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from matplotlib.cm import ScalarMappable
 from mpi4py import MPI
 
 import os
@@ -37,13 +39,38 @@ TNG100_REDSHIFT_COLUMNS = [
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_stub", type=str)
     parser.add_argument("--kmax", type=float)
     parser.add_argument("--Nmesh", type=float)
     parser.add_argument("--Nwalkers", type=int)
     parser.add_argument("--Nsamples_per_walker", type=int)
+    parser.add_argument("--do_sampling", action="store_true")
+    parser.add_argument("--plot_examples", action="store_true")
+    parser.add_argument("--plot_samples", action="store_true")
+    parser.add_argument("--scale_factor", type=float)
     args = parser.parse_args()
     return vars(args)
+
+
+def get_covariance_matrix(Pk):
+    """Calculate diagonal covariance matrix for power spectrum.
+
+    We assume that the covariance matrix is diagonal, so we only need to
+    calculate the variance of each power spectrum bin. The variance
+    is assumed to be given by:
+
+    .. math::
+        \mathrm{Var}(P(k)) = (0.1 * P(k)) ^ 2
+
+    As this was found to give empirically good results in Dai et al 2018.
+
+    Args:
+        ks (ndarray): Wavenumbers in h/Mpc.
+        Pk (ndarray): Power in corresponding bins.
+    """
+    if np.isnan(Pk).any():
+        # NaNs caused by too-low Nmesh can result in high-k NaNs.
+        raise ValueError("Pk contains NaNs, try increasing Nmesh")
+    return (0.1 * np.diag(Pk)) ** 2
 
 
 def get_subdirectories(root_dir):
@@ -132,31 +159,7 @@ def interpolate_TNG100_Pkratio(df, redshift_column, wavenumbers):
 
     # Use the interpolating function to calculate the power at the specified
     # wavenumbers
-    interpolated_power = interpolator(wavenumbers)
-
-    return interpolated_power
-
-
-def get_covariance_matrix(ks, Pk):
-    """Calculate diagonal covariance matrix for power spectrum.
-
-    We assume that the covariance matrix is diagonal, so we only need to
-    calculate the variance of each power spectrum bin. The variance
-    is assumed to be given by:
-
-    .. math::
-        \mathrm{Var}(P(k)) = (0.1 * P(k)) ^ 2
-
-    As this was found to give empirically good results in Dai et al 2018.
-
-    Args:
-        ks (ndarray): Wavenumbers in h/Mpc.
-        Pk (ndarray): Power in corresponding bins.
-    """
-    if np.isnan(Pk).any():
-        # NaNs caused by too-low Nmesh can result in high-k NaNs.
-        raise ValueError("Pk contains NaNs, try increasing Nmesh")
-    return (0.1 * np.diag(Pk)) ** 2
+    return interpolator(wavenumbers)
 
 
 def plot_interpolated_Pk_ratio(df, Pkratio, colz, ks):
@@ -236,10 +239,8 @@ class FastPM_EGD_Likelihood(object):
     def __init__(self, Pk_target, cov_Pk, cat, Nmesh=1024, kmax=10, verbose=False):
         self.Pk_target = Pk_target
         self.cov_Pk = cov_Pk
-        self.log_det_cov_Pk = np.log(
-            1.0
-            / ((2 * np.pi) ** (len(Pk_target) / 2.0) * np.sqrt(np.linalg.det(cov_Pk)))
-        )
+        self.log_det_cov_Pk = -0.5 * np.log(np.linalg.det(cov_Pk))
+        self.log_det_cov_Pk += -len(Pk_target) / 2.0 * np.log(2.0 * np.pi)
         self.cat = cat
         self.Nmesh = Nmesh
         self.kmax = kmax
@@ -252,7 +253,11 @@ class FastPM_EGD_Likelihood(object):
             print(f"\t gamma {params[0]:.2f}, beta {params[1]:.2f}", flush=True)
         if params[0] < 1:
             return -np.inf
+        if params[0] > 2:
+            return -np.inf
         if params[1] < 0:
+            return -np.inf
+        if params[1] > 2:
             return -np.inf
 
         log_lkl = self.log_lkl(params)
@@ -268,8 +273,8 @@ class FastPM_EGD_Likelihood(object):
             return -np.inf
         else:
             return (
-                -0.5 * delta_Pk.T @ np.linalg.inv(self.cov_Pk) @ delta_Pk
-                + self.log_det_cov_Pk
+                self.log_det_cov_Pk
+                - 0.5 * delta_Pk.T @ np.linalg.inv(self.cov_Pk) @ delta_Pk
             )
 
     def Pk_forward(self, params):
@@ -282,10 +287,149 @@ class FastPM_EGD_Likelihood(object):
         return Pk["power"].real - Pk.attrs["shotnoise"]
 
 
+def plot_PkFastPM_EGD(Pk, EGD_Pk, target_Pk, cov_Pk, output_stub):
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+
+    sigma_Pk = np.sqrt(np.diag(cov_Pk))
+
+    ax.loglog(
+        Pk["k"],
+        Pk["power"].real - Pk.attrs["shotnoise"],
+        label="FastPM 704",
+        color="k",
+        linestyle="-",
+    )
+
+    ax.loglog(
+        EGD_Pk["k"],
+        EGD_Pk["power"].real - EGD_Pk.attrs["shotnoise"],
+        label="FastPM 704 w/ EGD",
+        color="r",
+        linestyle="-",
+    )
+
+    lower = Pk["power"].real - Pk.attrs["shotnoise"] - sigma_Pk
+    upper = Pk["power"].real - Pk.attrs["shotnoise"] + sigma_Pk
+    ax.fill_between(Pk["k"], lower, upper, color="gray", alpha=0.5)
+
+    ax.loglog(
+        Pk["k"],
+        target_Pk,
+        label="Target",
+        color="lightskyblue",
+        linestyle="--",
+    )
+    ax.fill_between(Pk["k"], lower, upper, color="gray", alpha=0.5)
+    ax.legend(loc=3, frameon=False)
+    ax.set_xlabel(r"$k$ [$h \ \mathrm{Mpc}^{-1}$]")
+    ax.set_ylabel(r"$P(k)/ P^{\rm FastPM}(k)$")
+    ax.set_xlim(0.1, 10)
+    ax.set_title(output_stub)
+    print(f"Saving to /plots/baryons/FastPM704_EGD_Pk_{output_stub}.pdf")
+    fig.savefig(
+        f"/plots/baryons/FastPM704_EGD_Pk_{output_stub}.pdf", bbox_inches="tight"
+    )
+
+
+def plot_PkFastPM_EGD_samples(Pk, betas, spectra, target_Pk, cov_Pk, output_stub):
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+
+    sigma_Pk = np.sqrt(np.diag(cov_Pk))
+
+    ax.loglog(
+        Pk["k"],
+        Pk["power"].real - Pk.attrs["shotnoise"],
+        label="FastPM 704",
+        color="k",
+        linestyle="-",
+    )
+
+    norm = mcolors.Normalize(vmin=min(betas), vmax=max(betas))
+    colormap = plt.cm.viridis
+    for beta, EGD_Pk in zip(betas, spectra):
+        ax.loglog(
+            EGD_Pk["k"],
+            EGD_Pk["power"].real - EGD_Pk.attrs["shotnoise"],
+            # label="FastPM 704 w/ EGD",
+            color=colormap(norm(beta)),
+            linestyle="-",
+        )
+    cax = fig.add_axes([0.92, 0.1, 0.02, 0.8])  # [left, bottom, width, height]
+    sm = ScalarMappable(cmap=colormap, norm=norm)
+    sm.set_array([])
+    fig.colorbar(sm, cax=cax, label="beta")
+
+    lower = Pk["power"].real - Pk.attrs["shotnoise"] - sigma_Pk
+    upper = Pk["power"].real - Pk.attrs["shotnoise"] + sigma_Pk
+    ax.fill_between(Pk["k"], lower, upper, color="gray", alpha=0.5)
+
+    ax.loglog(
+        Pk["k"],
+        target_Pk,
+        label="Target",
+        color="lightskyblue",
+        linestyle="--",
+    )
+    ax.fill_between(Pk["k"], lower, upper, color="gray", alpha=0.5)
+    ax.legend(loc=3, frameon=False)
+    ax.set_xlabel(r"$k$ [$h \ \mathrm{Mpc}^{-1}$]")
+    ax.set_ylabel(r"$P(k)/ P^{\rm FastPM}(k)$")
+    ax.set_xlim(0.1, 10)
+    ax.set_title(output_stub)
+    print(f"Saving to /plots/baryons/FastPM704_EGD_Pk_{output_stub}.pdf")
+    fig.savefig(
+        f"/plots/baryons/FastPM704_EGD_Pk_{output_stub}.pdf", bbox_inches="tight"
+    )
+
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+
+    ax.semilogx(
+        Pk["k"],
+        (Pk["power"].real - Pk.attrs["shotnoise"]) / target_Pk,
+        label="FastPM 704",
+        color="k",
+        linestyle="-",
+    )
+
+    norm = mcolors.Normalize(vmin=min(betas), vmax=max(betas))
+    colormap = plt.cm.viridis
+    for beta, EGD_Pk in zip(betas, spectra):
+        ax.loglog(
+            EGD_Pk["k"],
+            (EGD_Pk["power"].real - EGD_Pk.attrs["shotnoise"]) / target_Pk,
+            # label="FastPM 704 w/ EGD",
+            color=colormap(norm(beta)),
+            linestyle="-",
+        )
+    cax = fig.add_axes([0.92, 0.1, 0.02, 0.8])  # [left, bottom, width, height]
+    sm = ScalarMappable(cmap=colormap, norm=norm)
+    sm.set_array([])
+    fig.colorbar(sm, cax=cax, label="beta")
+    ax.axhline(y=1, linestyle="--", color="gray")
+
+    lower = Pk["power"].real - Pk.attrs["shotnoise"] - sigma_Pk
+    upper = Pk["power"].real - Pk.attrs["shotnoise"] + sigma_Pk
+    ax.fill_between(
+        Pk["k"], lower / target_Pk, upper / target_Pk, color="gray", alpha=0.5
+    )
+    ax.legend(loc=3, frameon=False)
+    ax.set_xlabel(r"$k$ [$h \ \mathrm{Mpc}^{-1}$]")
+    ax.set_ylabel(r"$P(k)/ P^{\rm Target}(k)$")
+    ax.set_xlim(0.1, 10)
+    ax.set_ylim(0.75, 1.25)
+    ax.set_title(output_stub)
+    print(f"Saving to /plots/baryons/FastPM704_EGD_Pk_ratio_{output_stub}.pdf")
+    fig.savefig(
+        f"/plots/baryons/FastPM704_EGD_Pk_ratio_{output_stub}.pdf", bbox_inches="tight"
+    )
+
+
 def main():
     args = parse_args()
+
     # Snapshot parameters
-    a = 0.6579
+    # a = 0.6579
+    a = args["scale_factor"]
     z = 1 / a - 1
     colz = f"z{z:.2f}".replace(".", "")
 
@@ -297,6 +441,9 @@ def main():
     ndim = 2
     nwalkers = args["Nwalkers"]
     nsamples = args["Nsamples_per_walker"]
+
+    # For saved file names
+    output_stub = f"kmax{kmax}_Nmesh{Nmesh_Pk}_a{a}"
 
     # Interpolate TNG100 redshifts to match FASTPM redshifts.
     FPM704_redshifts = get_FastPM_redshifts_from_directories(FASTPM704_SNAPSHOTS_PATH)
@@ -320,9 +467,9 @@ def main():
     ) * interpolate_TNG100_Pkratio(df, colz, Pk_fastpm704["k"])
 
     # Calculate the covariance matrix (assumed diagonal).
-    cov_Pk = get_covariance_matrix(Pk_fastpm704["k"], target_Pk)
+    cov_Pk = get_covariance_matrix(target_Pk)
     if RANK == 0:
-        plot_PkFastPM(Pk_fastpm704, target_Pk, cov_Pk, args["output_stub"])
+        plot_PkFastPM(Pk_fastpm704, target_Pk, cov_Pk, output_stub)
 
     # Set up likelihood function for EGD parameters.
     lkl = FastPM_EGD_Likelihood(
@@ -331,51 +478,101 @@ def main():
 
     COMM.Barrier()
 
-    # gamma: uniform distribution in [1, 2]
-    np.random.seed(123)
-    p1_init = np.random.uniform(1, 2, nwalkers)
+    if args["do_sampling"]:
+        # gamma: uniform distribution in [1, 2]
+        np.random.seed(123)
+        p1_init = np.random.uniform(1, 1.5, nwalkers)
 
-    # beta: uniform distribution in [0, 2]
-    p2_init = np.random.uniform(0, 2, nwalkers)
+        # beta: uniform distribution in [0, 2]
+        p2_init = np.random.uniform(0, 0.5, nwalkers)
 
-    index = 0
-    autocorr = np.empty(nsamples)
-    # Combine into initial positions array
-    p0 = np.column_stack((p1_init, p2_init))
-    # Run sampling (this currently runs on all MPI ranks)
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, lkl)
+        index = 0
+        autocorr = np.empty(nsamples)
+        # Combine into initial positions array
+        p0 = np.column_stack((p1_init, p2_init))
+        # Run sampling (this currently runs on all MPI ranks)
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lkl)
 
-    for sample in sampler.sample(p0, iterations=nsamples, progress=False):
-        if RANK == 0:
-            print(f"Iteration: {sampler.iteration}", flush=True)
-        if sampler.iteration % 10:
-            continue
+        for sample in sampler.sample(p0, iterations=nsamples, progress=False):
+            if RANK == 0:
+                print(f"Iteration: {sampler.iteration}", flush=True)
+            if sampler.iteration % 10:
+                continue
 
-        tau = sampler.get_autocorr_time(tol=0)
-        autocorr[index] = np.mean(tau)
-        index += 1
-        print(autocorr[index])
+            tau = sampler.get_autocorr_time(tol=0)
+            autocorr[index] = np.mean(tau)
+            index += 1
+            print(autocorr[index])
+            samples = sampler.get_chain(flat=True)
+
+            output_prefix = f"{output_stub}_Nwalkers{nwalkers}_Nsamp{nsamples}_iter{sampler.iteration:03d}"
+            np.savetxt(
+                f"/data/baryons/{output_prefix}_samples.txt",
+                samples,
+            )
+            fig = corner.corner(samples, labels=["gamma", "beta"])
+            fig.savefig(
+                f"/plots/baryons/{output_prefix}_posterior.pdf", bbox_inches="tight"
+            )
+
         samples = sampler.get_chain(flat=True)
+        if RANK == 0:
+            np.savetxt(
+                f"/data/baryons/samples_{output_stub}_Nwalkers{nwalkers}_Nsamp{nsamples}.txt",
+                samples,
+            )
+            fig = corner.corner(samples, labels=["gamma", "beta"])
+            fig.savefig("/plots/baryons/posterior.pdf", bbox_inches="tight")
+            plt.show()
 
-        output_prefix = f"{args['output_stub']}_Nwalkers{nwalkers}_Nsamp{nsamples}_iter{sampler.iteration:03d}"
-        np.savetxt(
+    if args["plot_samples"]:
+        output_prefix = (
+            f"{output_stub}_Nwalkers{nwalkers}_Nsamp{nsamples}_iter{nsamples}"
+        )
+        samples = np.loadtxt(
             f"/data/baryons/{output_prefix}_samples.txt",
-            samples,
         )
-        fig = corner.corner(samples, labels=["gamma", "beta"])
-        fig.savefig(
-            f"/plots/baryons/{output_prefix}_posterior.pdf", bbox_inches="tight"
+        gamma, beta = np.mean(samples, axis=0)
+        shift = EGD(cat, gamma, beta)
+        cat["EGD_Position"] = cat["Position"] + shift
+        mesh = cat.to_mesh(
+            resampler="tsc", Nmesh=Nmesh_Pk, compensated=True, position="EGD_Position"
         )
+        Pk_EGD = FFTPower(mesh, kmax=kmax, mode="1d").power
+        if RANK == 0:
+            print("Gamma, beta:", gamma, beta, flush=True)
+            plot_PkFastPM_EGD(
+                Pk_fastpm704,
+                Pk_EGD,
+                target_Pk,
+                cov_Pk,
+                f"gamma_{gamma:.2f}_beta_{beta:.2f}".replace(".", "p"),
+            )
 
-    samples = sampler.get_chain(flat=True)
-    if RANK == 0:
-        np.savetxt(
-            f"/data/baryons/samples_{args['output_stub']}_Nwalkers{nwalkers}_Nsamp{nsamples}.txt",
-            samples,
-        )
-        fig = corner.corner(samples, labels=["gamma", "beta"])
-        fig.savefig("/plots/baryons/posterior.pdf", bbox_inches="tight")
-        plt.show()
+    if args["plot_examples"]:
+        gammas = [1.01, 1.05, 1.10, 1.2, 1.5, 2]
+        betas = np.linspace(0.1, 2, 10)
+        for gamma in gammas:
+            spectra = []
+            for beta in betas:
+                shift = EGD(cat, gamma, beta)
+                cat["EGD_Position"] = cat["Position"] + shift
+                mesh = cat.to_mesh(
+                    resampler="tsc",
+                    Nmesh=Nmesh_Pk,
+                    compensated=True,
+                    position="EGD_Position",
+                )
+                spectra.append(FFTPower(mesh, kmax=kmax, mode="1d").power)
+            if RANK == 0:
+                plot_PkFastPM_EGD_samples(
+                    Pk_fastpm704,
+                    betas,
+                    spectra,
+                    target_Pk,
+                    cov_Pk,
+                    f"example_spectra_gamma_{gamma:.2f}_{output_stub}",
+                )
     return
 
 

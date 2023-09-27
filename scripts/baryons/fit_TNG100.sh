@@ -8,10 +8,11 @@
 
 export OMP_NUM_THREADS=1
 total_processes=$((SLURM_JOB_NUM_NODES * 128))
-Nmesh=1024
+Nmesh=512
 kmax=8
 Nsamples=250
 Nwalkers=4
+scale_factor=0.4902
 
 srun -n $total_processes podman-hpc run --mpi --rm                                          \
     --volume /pscratch/sd/b/bthorne/fairuniverse/hsc_dataset:/snapshot_dir                  \
@@ -19,9 +20,10 @@ srun -n $total_processes podman-hpc run --mpi --rm                              
     --volume $PWD/data:/data                                                                \
     --volume $PWD/plots:/plots                                                              \
     fpm:latest python3 /scripts/baryons/fit_TNG100.py                                       \
-    --output_stub kmax${kmax}_Nmesh${Nmesh}_nodes${SLURM_JON_NUM_NODES}_${SLURM_JOB_ID}     \
     --kmax ${kmax}                                                                          \
     --Nmesh ${Nmesh}                                                                        \
     --Nwalkers ${Nwalkers}                                                                  \
-    --Nsamples_per_walker ${Nsamples}
+    --Nsamples_per_walker ${Nsamples}                                                       \
+    --scale_factor ${scale_factor}                                                          \
+    --do_sampling
 
