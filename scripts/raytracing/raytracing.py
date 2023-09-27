@@ -154,8 +154,8 @@ class LensingPlane:
         if verbose and self.comm.rank == 0:
             print(
                 "Loading particle at redshift %.2f takes" % self.redshift,
-                time.time() - t,
-                "s",
+                f"{time.time() - t:.2f}",
+                "seconds",
                 flush=True,
             )
 
@@ -231,7 +231,7 @@ class LensingPlane:
         if verbose and self.comm.rank == 0:
             print(
                 "Particle preprocessing at redshift %.2f takes" % self.redshift,
-                time.time() - t,
+                f"{time.time() - t:.2f}",
                 "s",
                 flush=True,
             )
@@ -273,7 +273,7 @@ class LensingPlane:
         if verbose and self.comm.rank == 0:
             print(
                 "Particle painting at redshift %.2f takes" % self.redshift,
-                time.time() - t,
+                f"{time.time() - t:.2f}",
                 "s",
                 flush=True,
             )
@@ -324,7 +324,7 @@ class LensingPlane:
         if verbose and self.comm.rank == 0:
             print(
                 "Deflection angle calculation at redshift %.2f takes" % self.redshift,
-                time.time() - t,
+                f"{time.time() - t:.2f}",
                 "s",
                 flush=True,
             )
@@ -356,7 +356,7 @@ class LensingPlane:
         if verbose and self.comm.rank == 0:
             print(
                 "Shear matrix calculation at redshift %.2f takes" % self.redshift,
-                time.time() - t,
+                f"{time.time() - t:.2f}",
                 "s",
                 flush=True,
             )
@@ -508,8 +508,8 @@ class LensingPlane:
             print(
                 "Savinging lensing plane at redshift %.2f to disk takes"
                 % self.redshift,
-                time.time() - t,
-                "s",
+                f"{time.time() - t:.2f}",
+                "seconds",
                 flush=True,
             )
 
@@ -563,8 +563,8 @@ class LensingPlane:
         if verbose and self.comm.rank == 0:
             print(
                 "Loading lensing plane at redshift %.2f takes" % self.redshift,
-                time.time() - t,
-                "s",
+                f"{time.time() - t:.2f}",
+                "seconds",
                 flush=True,
             )
 

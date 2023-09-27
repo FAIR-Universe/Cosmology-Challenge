@@ -26,3 +26,25 @@ def redshift_to_scale(z):
 
 def scale_to_redshift(a):
     return 1.0 / a - 1.0
+
+
+def get_covariance_matrix(ks, Pk):
+    """Calculate diagonal covariance matrix for power spectrum.
+
+    We assume that the covariance matrix is diagonal, so we only need to
+    calculate the variance of each power spectrum bin. The variance
+    is assumed to be given by:
+
+    .. math::
+        \mathrm{Var}(P(k)) = (0.1 * P(k)) ^ 2
+
+    As this was found to give empirically good results in Dai et al 2018.
+
+    Args:
+        ks (ndarray): Wavenumbers in h/Mpc.
+        Pk (ndarray): Power in corresponding bins.
+    """
+    if np.isnan(Pk).any():
+        # NaNs caused by too-low Nmesh can result in high-k NaNs.
+        raise ValueError("Pk contains NaNs, try increasing Nmesh")
+    return (0.1 * np.diag(Pk)) ** 2
