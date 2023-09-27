@@ -20,11 +20,6 @@ RUN pip install numpy           \
 
 RUN pip install --upgrade matplotlib
 
-WORKDIR /usr/src/app
-COPY src/ src/
-COPY setup.py setup.py
-RUN pip install .
-
 WORKDIR /usr/src/pmesh
 COPY pmesh/ pmesh/
 WORKDIR /usr/src/pmesh/pmesh
