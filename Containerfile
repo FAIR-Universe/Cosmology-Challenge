@@ -7,7 +7,6 @@ RUN apt-get update &&               \
 RUN pip install Cython==0.29.33
 RUN pip install numpy           \
                 scipy           \
-                matplotlib      \
                 notebook        \
                 ipython         \
                 ipykernel       \ 
@@ -18,6 +17,8 @@ RUN pip install numpy           \
                 emcee           \
                 corner          \
                 h5py
+
+RUN pip install --upgrade matplotlib
 
 WORKDIR /usr/src/app
 COPY src/ src/
